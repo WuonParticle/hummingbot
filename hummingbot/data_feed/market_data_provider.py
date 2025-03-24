@@ -67,20 +67,16 @@ class MarketDataProvider:
     def initialize_rate_sources(self, connector_pairs: List[ConnectorPair]):
         """
         Initializes a rate source based on the given connector pair.
-        :param connector_pair: ConnectorPair
+        :param connector_pairs: List of ConnectorPair objects
         """
         for connector_pair in connector_pairs:
+            connector_name, trading_pair = connector_pair
             if connector_pair.is_amm_connector():
                 if "gateway" not in self._rates_required:
                     self._rates_required["gateway"] = []
                 self._rates_required["gateway"].append(connector_pair)
                 continue
-            if connector_pair.connector_name not in self._rates_required:
-                self._rates_required[connector_pair.connector_name] = []
-            self._rates_required[connector_pair.connector_name].append(connector_pair)
-            if connector_pair.connector_name not in self._rate_sources:
-                self._rate_sources[connector_pair.connector_name] = self.get_non_trading_connector(
-                    connector_pair.connector_name)
+            self._rates_required.add_or_update(connector_name, connector_pair)
         if not self._rates_update_task:
             self._rates_update_task = safe_ensure_future(self.update_rates_task())
 
