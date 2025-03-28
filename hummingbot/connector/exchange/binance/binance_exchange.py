@@ -22,6 +22,7 @@ from hummingbot.core.data_type.order_book_tracker_data_source import OrderBookTr
 from hummingbot.core.data_type.trade_fee import DeductedFromReturnsTradeFee, TokenAmount, TradeFeeBase
 from hummingbot.core.data_type.user_stream_tracker_data_source import UserStreamTrackerDataSource
 from hummingbot.core.event.events import MarketEvent, OrderFilledEvent
+from hummingbot.core.utils import async_ttl_cache
 from hummingbot.core.utils.async_utils import safe_gather
 from hummingbot.core.web_assistant.connections.data_types import RESTMethod
 from hummingbot.core.web_assistant.web_assistants_factory import WebAssistantsFactory
@@ -551,3 +552,11 @@ class BinanceExchange(ExchangePyBase):
         )
 
         return float(resp_json["lastPrice"])
+
+    @async_ttl_cache(ttl=60, maxsize=1)  # Cache for 1 hour
+    async def _make_trading_pairs_request(self) -> Dict[str, Any]:
+        """
+        Makes a request to the exchange to get the list of trading pairs.
+        Results are cached for 1 hour using async_ttl_cache.
+        """
+        return await super()._make_trading_pairs_request()
