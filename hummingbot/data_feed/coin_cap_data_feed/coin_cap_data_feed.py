@@ -22,7 +22,8 @@ class CoinCapAPIKeyAppender(RESTPreProcessorBase):
 
     async def pre_process(self, request: RESTRequest) -> RESTRequest:
         request.headers = request.headers or {}
-        request.headers["Authorization"] = self._api_key
+        if self._api_key:
+            request.headers["Authorization"] = f"Bearer {self._api_key}"
         return request
 
 
@@ -104,14 +105,18 @@ class CoinCapDataFeed(DataFeedBase):
             "ids": ",".join(self._assets_map.values()),
         }
 
-        data = await self._make_request(url=url, params=params)
-        for asset_data in data["data"]:
-            base = asset_data["symbol"]
-            trading_pair = combine_to_hb_trading_pair(base=base, quote=CONSTANTS.UNIVERSAL_QUOTE_TOKEN)
-            try:
-                prices[trading_pair] = Decimal(asset_data["priceUsd"])
-            except TypeError:
-                continue
+        try:
+            data = await self._make_request(url=url, params=params)
+            for asset_data in data["data"]:
+                base = asset_data["symbol"]
+                trading_pair = combine_to_hb_trading_pair(base=base, quote=CONSTANTS.UNIVERSAL_QUOTE_TOKEN)
+                try:
+                    prices[trading_pair] = Decimal(asset_data["priceUsd"])
+                except (TypeError, KeyError):
+                    self.logger().warning(f"Unable to parse price data for {base}: {asset_data}")
+                    continue
+        except Exception as e:
+            self.logger().error(f"Error fetching prices from CoinCap API: {e}")
 
         return prices
 
@@ -119,21 +124,38 @@ class CoinCapDataFeed(DataFeedBase):
         api_factory = self._get_api_factory()
         rest_assistant = await api_factory.get_rest_assistant()
         rate_limit_id = CONSTANTS.API_KEY_LIMIT_ID if self._is_api_key_authorized else CONSTANTS.NO_KEY_LIMIT_ID
-        response = await rest_assistant.execute_request_and_get_response(
-            url=url,
-            throttler_limit_id=rate_limit_id,
-            params=params,
-            method=RESTMethod.GET,
-        )
-        self._check_is_api_key_authorized(response=response)
-        data = await response.json()
-        return data
+
+        try:
+            response = await rest_assistant.execute_request_and_get_response(
+                url=url,
+                throttler_limit_id=rate_limit_id,
+                params=params,
+                method=RESTMethod.GET,
+            )
+
+            if response.status == 429:
+                error_text = await response.text()
+                self.logger().error(f"Rate limit hit: {error_text}")
+                raise Exception(f"CoinCap API rate limit exceeded: {error_text}")
+
+            self._check_is_api_key_authorized(response=response)
+            data = await response.json()
+            return data
+        except Exception as e:
+            self.logger().error(f"Error making request to CoinCap API: {e}")
+            raise
 
     def _check_is_api_key_authorized(self, response: RESTResponse):
         self.logger().debug(f"CoinCap REST response headers: {response.headers}")
-        self._is_api_key_authorized = int(response.headers["X-Ratelimit-Limit"]) == CONSTANTS.API_KEY_LIMIT
-        if not self._is_api_key_authorized and self._api_key != "":
-            self.logger().warning("CoinCap API key is not authorized. Please check your API key.")
+        # Check for rate limit headers
+        limit_header = "X-Ratelimit-Limit"
+        if limit_header in response.headers:
+            self._is_api_key_authorized = int(response.headers[limit_header]) >= CONSTANTS.API_KEY_LIMIT
+        else:
+            self._is_api_key_authorized = False
+
+        if not self._is_api_key_authorized and self._api_key:
+            self.logger().warning("CoinCap API key is not authorized. Please check your API key or sign up for a new one at https://pro.coincap.io/dashboard")
 
     async def _stream_prices(self):
         while True:
@@ -143,18 +165,24 @@ class CoinCapDataFeed(DataFeedBase):
                 ws = await api_factory.get_ws_assistant()
                 symbols_map = {asset_id: symbol for symbol, asset_id in self._assets_map.items()}
                 ws_url = f"{CONSTANTS.BASE_WS_URL}{','.join(self._assets_map.values())}"
+
                 async with api_factory.throttler.execute_task(limit_id=CONSTANTS.WS_CONNECTIONS_LIMIT_ID):
                     await ws.connect(ws_url=ws_url)
+
                 async for msg in ws.iter_messages():
-                    for asset_id, price_str in msg.data.items():
-                        base = symbols_map[asset_id]
-                        trading_pair = combine_to_hb_trading_pair(base=base, quote=CONSTANTS.UNIVERSAL_QUOTE_TOKEN)
-                        self._price_dict[trading_pair] = Decimal(price_str)
+                    try:
+                        for asset_id, price_str in msg.data.items():
+                            if asset_id in symbols_map:
+                                base = symbols_map[asset_id]
+                                trading_pair = combine_to_hb_trading_pair(base=base, quote=CONSTANTS.UNIVERSAL_QUOTE_TOKEN)
+                                self._price_dict[trading_pair] = Decimal(price_str)
+                    except Exception as e:
+                        self.logger().error(f"Error processing websocket message: {e}, message: {msg}")
             except asyncio.CancelledError:
                 raise
-            except Exception:
+            except Exception as e:
                 self.logger().network(
-                    log_msg="Unexpected error while streaming prices. Restarting the stream.",
+                    log_msg=f"Unexpected error while streaming prices: {e}. Restarting the stream.",
                     exc_info=True,
                 )
                 await self._sleep(delay=1)

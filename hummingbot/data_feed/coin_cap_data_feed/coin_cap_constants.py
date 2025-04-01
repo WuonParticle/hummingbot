@@ -4,8 +4,8 @@ from hummingbot.core.api_throttler.data_types import LinkedLimitWeightPair, Rate
 
 UNIVERSAL_QUOTE_TOKEN = "USD"  # coincap only works with USD
 
-BASE_REST_URL = "https://api.coincap.io/v2"
-BASE_WS_URL = "wss://ws.coincap.io/prices?assets="
+BASE_REST_URL = "https://rest.coincap.io/v3"
+BASE_WS_URL = "wss://wss.coincap.io/prices?assets="
 
 ALL_ASSETS_ENDPOINT = "/assets"
 ASSET_ENDPOINT = "/assets/{}"
