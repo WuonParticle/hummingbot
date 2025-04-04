@@ -74,12 +74,12 @@ class MarketDataProvider:
     def time(self):
         return time.time()
 
-    def initialize_rate_sources(self, connector_pairs: List[ConnectorPair], utilize_markets_connector: bool = False):
+    def initialize_rate_sources(self, connector_pairs: List[ConnectorPair], ensure_connector_order_books: bool = False):
         """
         Initializes a rate source based on the given connector pair.
         :param connector_pairs: List of ConnectorPair objects
-        :param utilize_markets_connector: If True, uses existing connectors instead of creating new non-trading connectors
-            (useful if MarketDataProvider is used in a strategy that already has the connectors initialized)
+        :param ensure_order_books: If True, ensures order books in the CONNECTOR (not the rate source) are initialized for the trading pairs
+            (useful if MarketDataProvider is used in a strategy is being used for multiple pairs like during arbitrage)
         """
         for connector_pair in connector_pairs:
             connector_name, trading_pair = connector_pair
@@ -89,28 +89,6 @@ class MarketDataProvider:
                 self._rates_required["gateway"].append(connector_pair)
                 continue
             self._rates_required.add_or_update(connector_name, connector_pair)
-            if self.client_config_map.rate_oracle_source.name == connector_name:
-                if RateOracle.get_instance().source.name != connector_name:
-                    # bug caused by initializing the RateOracle using a default ClientConfigMap
-                    RateOracle.get_instance().source = self.client_config_map.rate_oracle_source.build_rate_source()
-                    self.logger().warning(f"Had to initialize RateOracle with {connector_name}")
-                continue  # Rate source desired is the the current rateOracle
-            if connector_name not in self._rates_required:
-                self._rates_required[connector_name] = []
-            self._rates_required[connector_name].append(connector_pair)
-
-            # TODO: detect if the trading pair is already taken care of by another connector.
-            # This causes a conflict with the RateOracle.
-            # Only create a new rate source if not utilizing existing connectors or if connector doesn't exist
-            # TODO: utilize the order_book for non_trading_connectors as well.
-            if (not utilize_markets_connector or connector_name not in self.connectors) and connector_name not in self._rate_sources:
-                self._rate_sources[connector_name] = self.get_non_trading_connector(connector_name)
-
-            # Ensure trading pairs are added to connector's order book tracker if it exists
-            if utilize_markets_connector and connector_name in self.connectors and self.connectors[connector_name].order_book_tracker:
-                if trading_pair not in self.connectors[connector_name].order_book_tracker._trading_pairs:
-                    self.connectors[connector_name].order_book_tracker._trading_pairs.append(trading_pair)
-                    self.logger().info(f"Added {trading_pair} to order book tracker for {connector_name}")
         if not self._rates_update_task:
             self._rates_update_task = safe_ensure_future(self.update_rates_task())
 
@@ -139,31 +117,9 @@ class MarketDataProvider:
                     except Exception as e:
                         self.logger().error(f"Error fetching prices from {connector_pairs}: {e}", exc_info=True)
                 else:
-                    # TODO: This conflicts with the RateOracles fetchPriceLoop
-                    # this is not neccessary as the connector should be initialized with the order book tracker
-                    # await RateOracle.get_instance().start_network_if_not_already_running()
-
-                    trading_pairs = [pair.trading_pair for pair in connector_pairs]
-
-                    if connector in self._rate_sources:
-                        connector_instance = self._rate_sources[connector]
-                        prices = await self._safe_get_last_traded_prices(connector_instance, trading_pairs)
-                    elif connector in self.connectors:
-                        # if utilize_markets_connector was true, then we should use the order book tracker
-                        prices = {}
-                        connector_instance = self.connectors[connector]
-                        for trading_pair in trading_pairs:
-                            try:
-                                # Get price directly from order book
-                                order_book = connector_instance.get_order_book(trading_pair)
-                                if order_book and order_book.last_trade_price:
-                                    prices[trading_pair] = Decimal(order_book.last_trade_price)
-                            except Exception as e:
-                                self.logger().error(f"Error getting price from order book for {trading_pair} in {connector}: {e}", exc_info=True)
-                    else:
-                        self.logger().error(f"No connector instance found for {connector}")
-                        continue
-
+                    connector = self._rate_sources[connector]
+                    prices = await self._safe_get_last_traded_prices(connector,
+                                                                     [pair.trading_pair for pair in connector_pairs])
                     for pair, rate in prices.items():
                         rate_oracle.set_price(pair, rate)
             await asyncio.sleep(self._rates_update_interval)
