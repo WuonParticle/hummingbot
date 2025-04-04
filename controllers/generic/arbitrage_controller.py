@@ -78,8 +78,10 @@ class ArbitrageController(ControllerBase):
                                                     trading_pair=f"{quote}-{self.config.quote_conversion_asset}"))
 
             # Add rate source for trading pairs
-            rates_required.append(ConnectorPair(connector_name=connector_pair.connector_name,
-                                                trading_pair=connector_pair.trading_pair))
+            # These are not
+            # rates_required.append(ConnectorPair(connector_name=connector_pair.connector_name,
+            #                                     trading_pair=connector_pair.trading_pair))
+
         if len(rates_required) > 0:
             self.market_data_provider.initialize_rate_sources(rates_required)
 
