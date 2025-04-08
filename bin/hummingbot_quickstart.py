@@ -39,11 +39,11 @@ class CmdlineParser(argparse.ArgumentParser):
         self.add_argument("--config-file-name", "-f",
                           type=str,
                           required=False,
-                          help="Specify a file in `conf/` to load as the strategy config file.")
+                          help="Specify a file in `conf/` to load as the strategy config file. For v2 strategies this should be v2_with_controllers.py")
         self.add_argument("--script-conf", "-c",
                           type=str,
                           required=False,
-                          help="Specify a file in `conf/scripts` to configure a script strategy.")
+                          help="Specify a file in `conf/scripts` to configure a script strategy. For v2 strategies this is a .yml file")
         self.add_argument("--config-password", "-p",
                           type=str,
                           required=False,

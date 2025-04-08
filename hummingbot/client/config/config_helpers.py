@@ -626,6 +626,8 @@ def get_strategy_pydantic_config_cls(strategy_name: str):
             pydantic_cm_class = getattr(pydantic_cm_mod, pydantic_cm_class_name)
     except ImportError:
         logging.getLogger().exception(f"Could not import Pydantic configs for {strategy_name}.")
+    except TypeError as e:
+        raise TypeError("Could not import Pydantic configs. You may have your v2 config file in the wrong directory and have your args swapped.", e)
     return pydantic_cm_class
 
 

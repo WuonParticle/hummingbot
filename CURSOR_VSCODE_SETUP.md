@@ -53,12 +53,44 @@ CONDA_ENV=hummingbot
 {
     "version": "0.2.0",
     "configurations": [
+      {
+        "name": "Debug Hummingbot Quickstart",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceRoot}/bin/hummingbot_quickstart.py",
+        "args": [
+          "-p", "a"
+      ],
+        "console": "integratedTerminal"
+      },
+      {
+        "name": "Debug with v2_with_controllers.py",
+        "type": "debugpy",
+        "request": "launch",
+        "program": "${workspaceRoot}/bin/hummingbot_quickstart.py",
+        "args": [
+          "-p", "a",
+          "--script-conf", "${input:scriptConfig_v2}",
+          "--config-file-name", "v2_with_controllers.py",
+      ],
+        "console": "integratedTerminal"
+      }
+    ],
+    "inputs": [
         {
-            "name": "Python: Hummingbot",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceRoot}/bin/hummingbot.py",
-            "console": "integratedTerminal"
+            "id": "configFileName",
+            "type": "promptString",
+            "description": "Specify a file in `conf/` to load as the strategy config file.",
+        },
+        {
+            "id": "scriptConfig",
+            "type": "promptString",
+            "description": "Specify a file in `conf/scripts` to configure a script strategy.",
+        },
+        {
+            "id": "scriptConfig_v2",
+            "type": "promptString",
+            "description": "Specify a yml file in `conf/scripts` to configure a script strategy.",
         }
     ]
 }
