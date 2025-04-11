@@ -16,7 +16,7 @@ from hummingbot.client.config.config_helpers import (
 )
 from hummingbot.client.settings import AllConnectorSettings
 from hummingbot.connector.connector_base import ConnectorBase
-from hummingbot.core.data_type.common import PriceType, TradeType
+from hummingbot.core.data_type.common import GroupedSetDict, LambdaDict, PriceType, TradeType
 from hummingbot.core.data_type.order_book_query_result import OrderBookQueryResult
 from hummingbot.core.gateway.gateway_http_client import GatewayHttpClient
 from hummingbot.core.rate_oracle.rate_oracle import RateOracle
@@ -44,8 +44,8 @@ class MarketDataProvider:
         self._rates_update_task = None
         self._rates_update_interval = rates_update_interval
         self._rates = {}
-        self._rate_sources = {}
-        self._rates_required = {}
+        self._rate_sources = LambdaDict[str, ConnectorBase](self.get_non_trading_connector)
+        self._rates_required = GroupedSetDict[str, ConnectorPair]()
         self.conn_settings = AllConnectorSettings.get_connector_settings()
 
     @cached_property
@@ -74,7 +74,7 @@ class MarketDataProvider:
     def time(self):
         return time.time()
 
-    def initialize_rate_sources(self, connector_pairs: List[ConnectorPair], ensure_connector_order_books: bool = False):
+    def initialize_rate_sources(self, connector_pairs: List[ConnectorPair]):
         """
         Initializes a rate source based on the given connector pair.
         :param connector_pairs: List of ConnectorPair objects
@@ -84,9 +84,7 @@ class MarketDataProvider:
         for connector_pair in connector_pairs:
             connector_name, trading_pair = connector_pair
             if connector_pair.is_amm_connector():
-                if "gateway" not in self._rates_required:
-                    self._rates_required["gateway"] = []
-                self._rates_required["gateway"].append(connector_pair)
+                self._rates_required.add_or_update("gateway", connector_pair)
                 continue
             self._rates_required.add_or_update(connector_name, connector_pair)
         if not self._rates_update_task:

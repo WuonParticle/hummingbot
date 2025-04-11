@@ -2,11 +2,12 @@ import asyncio
 import importlib
 import inspect
 from decimal import Decimal
-from typing import TYPE_CHECKING, Callable, Dict, List, Set
+from typing import TYPE_CHECKING, Callable, List
 
 from pydantic import ConfigDict, Field, field_validator
 
 from hummingbot.client.config.config_data_types import BaseClientModel
+from hummingbot.core.data_type.common import MarketDict
 from hummingbot.core.data_type.trade_fee import TokenAmount
 from hummingbot.core.utils.async_utils import safe_ensure_future
 from hummingbot.data_feed.candles_feed.data_types import CandlesConfig
@@ -89,7 +90,7 @@ class ControllerConfigBase(BaseClientModel):
                 configs.append(config)
         return configs
 
-    def update_markets(self, markets: Dict[str, Set[str]]) -> Dict[str, Set[str]]:
+    def update_markets(self, markets: MarketDict) -> MarketDict:
         """
         Update the markets dict of the script from the config.
         """
