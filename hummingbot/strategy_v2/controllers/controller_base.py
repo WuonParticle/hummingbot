@@ -116,8 +116,10 @@ class ControllerBase(RunnableBase):
     """
     Base class for controllers.
     """
+
     def __init__(self, config: ControllerConfigBase, market_data_provider: MarketDataProvider,
-                 actions_queue: asyncio.Queue, update_interval: float = 1.0):
+                 actions_queue: asyncio.Queue, update_interval: float = 1.0, **_):
+        # allow kwargs with ** but don't pass  to super().__init__ because we currently have no use case for them.
         super().__init__(update_interval=update_interval)
         self.config = config
         self.executors_info: List[ExecutorInfo] = []
@@ -180,7 +182,7 @@ class ControllerBase(RunnableBase):
         """
         This method should be overridden by the derived classes to implement the logic to update the market data
         used by the controller. And should update the local market data collection to be used by the controller to
-        take decisions.
+        take decisions. During backtesting, this method is only called once!
         """
         raise NotImplementedError
 

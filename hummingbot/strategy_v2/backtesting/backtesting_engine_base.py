@@ -90,7 +90,7 @@ class BacktestingEngineBase:
         self.backtesting_data_provider.update_backtesting_time(start, end)
         await self.backtesting_data_provider.initialize_trading_rules(controller_config.connector_name)
         self.controller = controller_class(config=controller_config, market_data_provider=self.backtesting_data_provider,
-                                           actions_queue=None)
+                                           actions_queue=None, initialize_rate_sources=False)
         self.backtesting_resolution = backtesting_resolution
         await self.initialize_backtesting_data_provider()
         await self.controller.update_processed_data()
