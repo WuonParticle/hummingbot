@@ -16,6 +16,7 @@ from hummingbot.strategy_v2.backtesting.backtesting_data_provider import Backtes
 from hummingbot.strategy_v2.backtesting.executor_simulator_base import ExecutorSimulation
 from hummingbot.strategy_v2.backtesting.executors_simulator.dca_executor_simulator import DCAExecutorSimulator
 from hummingbot.strategy_v2.backtesting.executors_simulator.position_executor_simulator import PositionExecutorSimulator
+from hummingbot.strategy_v2.backtesting.metric_calculation_utils import sharpe_ratio, sortino_ratio
 from hummingbot.strategy_v2.controllers.controller_base import ControllerBase, ControllerConfigBase
 from hummingbot.strategy_v2.controllers.directional_trading_controller_base import (
     DirectionalTradingControllerConfigBase,
@@ -248,81 +249,89 @@ class BacktestingEngineBase:
 
     @staticmethod
     def summarize_results(executors_info: List, total_amount_quote: float = 1000):
-        if len(executors_info) > 0:
-            executors_df = pd.DataFrame([ei.to_dict() for ei in executors_info])
-            net_pnl_quote = executors_df["net_pnl_quote"].sum()
-            total_executors = executors_df.shape[0]
-            executors_with_position = executors_df[executors_df["net_pnl_quote"] != 0]
-            total_executors_with_position = executors_with_position.shape[0]
-            total_volume = executors_with_position["filled_amount_quote"].sum()
-            total_long = (executors_with_position["side"] == TradeType.BUY).sum()
-            total_short = (executors_with_position["side"] == TradeType.SELL).sum()
-            correct_long = ((executors_with_position["side"] == TradeType.BUY) & (executors_with_position["net_pnl_quote"] > 0)).sum()
-            correct_short = ((executors_with_position["side"] == TradeType.SELL) & (executors_with_position["net_pnl_quote"] > 0)).sum()
-            accuracy_long = correct_long / total_long if total_long > 0 else 0
-            accuracy_short = correct_short / total_short if total_short > 0 else 0
-            executors_df["close_type_name"] = executors_df["close_type"].apply(lambda x: x.name)
-            close_types = executors_df.groupby("close_type_name")["timestamp"].count().to_dict()
-            executors_with_position = executors_df[executors_df["net_pnl_quote"] != 0].copy()
-            # Additional metrics
-            total_positions = executors_with_position.shape[0]
-            win_signals = executors_with_position[executors_with_position["net_pnl_quote"] > 0]
-            loss_signals = executors_with_position[executors_with_position["net_pnl_quote"] < 0]
-            accuracy = (win_signals.shape[0] / total_positions) if total_positions else 0.0
-            cumulative_returns = executors_with_position["net_pnl_quote"].cumsum()
-            executors_with_position["cumulative_returns"] = cumulative_returns
-            executors_with_position["cumulative_volume"] = executors_with_position["filled_amount_quote"].cumsum()
-            executors_with_position["inventory"] = total_amount_quote + cumulative_returns
+        if len(executors_info) == 0:
+            return BacktestingEngineBase.return_empty_results()
+        executors_df = pd.DataFrame([ei.to_dict() for ei in executors_info])
+        net_pnl_quote = executors_df["net_pnl_quote"].sum()
+        total_executors = executors_df.shape[0]
+        executors_with_position = executors_df[executors_df["net_pnl_quote"] != 0]
+        total_positions = executors_with_position.shape[0]
+        if total_positions == 0:
+            return BacktestingEngineBase.return_empty_results()
+        total_volume = executors_with_position["filled_amount_quote"].sum()
+        total_long = (executors_with_position["side"] == TradeType.BUY).sum()
+        total_short = (executors_with_position["side"] == TradeType.SELL).sum()
+        correct_long = ((executors_with_position["side"] == TradeType.BUY) & (executors_with_position["net_pnl_quote"] > 0)).sum()
+        correct_short = ((executors_with_position["side"] == TradeType.SELL) & (executors_with_position["net_pnl_quote"] > 0)).sum()
+        accuracy_long = correct_long / total_long if total_long > 0 else 0
+        accuracy_short = correct_short / total_short if total_short > 0 else 0
+        executors_df["close_type_name"] = executors_df["close_type"].apply(lambda x: x.name)
+        close_types = executors_df.groupby("close_type_name")["timestamp"].count().to_dict()
+        executors_with_position = executors_df[executors_df["net_pnl_quote"] != 0].copy()
+        # Additional metrics
+        win_signals = executors_with_position[executors_with_position["net_pnl_quote"] > 0]
+        loss_signals = executors_with_position[executors_with_position["net_pnl_quote"] < 0]
+        accuracy = (win_signals.shape[0] / total_positions) if total_positions else 0.0
+        cumulative_returns = executors_with_position["net_pnl_quote"].cumsum()
+        executors_with_position["cumulative_returns"] = cumulative_returns
+        executors_with_position["cumulative_volume"] = executors_with_position["filled_amount_quote"].cumsum()
+        executors_with_position["inventory"] = total_amount_quote + cumulative_returns
 
-            peak = np.maximum.accumulate(cumulative_returns)
-            drawdown = (cumulative_returns - peak)
-            max_draw_down = np.min(drawdown)
-            max_drawdown_pct = max_draw_down / executors_with_position["inventory"].iloc[0]
-            returns = pd.to_numeric(
-                executors_with_position["cumulative_returns"] / executors_with_position["cumulative_volume"])
-            sharpe_ratio = returns.mean() / returns.std() if len(returns) > 1 else 0
-            total_won = win_signals.loc[:, "net_pnl_quote"].sum()
-            total_loss = - loss_signals.loc[:, "net_pnl_quote"].sum()
-            profit_factor = total_won / total_loss if total_loss > 0 else 1
-            net_pnl_pct = net_pnl_quote / total_amount_quote
+        peak = np.maximum.accumulate(cumulative_returns)
+        drawdown = (cumulative_returns - peak)
+        max_draw_down = np.min(drawdown)
+        max_drawdown_pct = max_draw_down / executors_with_position["inventory"].iloc[0]
+        returns = pd.to_numeric(
+            executors_with_position["cumulative_returns"] / executors_with_position["cumulative_volume"])
+        sharpe_ratio_val = sharpe_ratio(returns)
+        sortino_ratio_val = sortino_ratio(returns)
+        total_won = win_signals.loc[:, "net_pnl_quote"].sum()
+        total_loss = - loss_signals.loc[:, "net_pnl_quote"].sum()
+        profit_factor = total_won / total_loss if total_loss > 0 else np.inf if total_won > 0 else 1  # Handle zero loss case
+        net_pnl_pct = net_pnl_quote / total_amount_quote
 
-            return {
-                "net_pnl": float(net_pnl_pct),
-                "net_pnl_quote": float(net_pnl_quote),
-                "total_executors": int(total_executors),
-                "total_executors_with_position": int(total_executors_with_position),
-                "total_volume": float(total_volume),
-                "total_long": int(total_long),
-                "total_short": int(total_short),
-                "close_types": close_types,
-                "accuracy_long": float(accuracy_long),
-                "accuracy_short": float(accuracy_short),
-                "total_positions": int(total_positions),
-                "accuracy": float(accuracy),
-                "max_drawdown_usd": float(max_draw_down),
-                "max_drawdown_pct": float(max_drawdown_pct),
-                "sharpe_ratio": float(sharpe_ratio),
-                "profit_factor": float(profit_factor),
-                "win_signals": int(win_signals.shape[0]),
-                "loss_signals": int(loss_signals.shape[0]),
-            }
         return {
-            "net_pnl": 0,
-            "net_pnl_quote": 0,
+            "net_pnl": float(net_pnl_pct),
+            "net_pnl_quote": float(net_pnl_quote),
+            "total_executors": int(total_executors),
+            "total_executors_with_position": int(total_positions),
+            "total_volume": float(total_volume),
+            "total_long": int(total_long),
+            "total_short": int(total_short),
+            "close_types": close_types,
+            "accuracy_long": float(accuracy_long),
+            "accuracy_short": float(accuracy_short),
+            "total_positions": int(total_positions),
+            "accuracy": float(accuracy),
+            "max_drawdown_usd": float(max_draw_down),
+            "max_drawdown_pct": float(max_drawdown_pct),
+            "sharpe_ratio": float(sharpe_ratio_val),
+            "sortino_ratio": float(sortino_ratio_val),
+            "profit_factor": float(profit_factor),
+            "win_signals": int(win_signals.shape[0]),
+            "loss_signals": int(loss_signals.shape[0]),
+        }
+
+    @staticmethod
+    def return_empty_results():
+        return {
+            "net_pnl": 0.0,
+            "net_pnl_quote": 0.0,
             "total_executors": 0,
             "total_executors_with_position": 0,
-            "total_volume": 0,
+            "total_volume": 0.0,
             "total_long": 0,
             "total_short": 0,
             "close_types": 0,
-            "accuracy_long": 0,
-            "accuracy_short": 0,
+            "accuracy_long": 0.0,
+            "accuracy_short": 0.0,
             "total_positions": 0,
-            "accuracy": 0,
-            "max_drawdown_usd": 0,
-            "max_drawdown_pct": 0,
-            "sharpe_ratio": 0,
-            "profit_factor": 0,
+            "accuracy": 0.0,
+            "max_drawdown_usd": 0.0,
+            "max_drawdown_pct": 0.0,
+            "sharpe_ratio": 0.0,
+            "sortino_ratio": 0.0,
+            "profit_factor": 0.0,
             "win_signals": 0,
             "loss_signals": 0,
         }
