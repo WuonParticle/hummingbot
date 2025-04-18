@@ -15,7 +15,8 @@ test:
  	--ignore="test/mock" \
  	--ignore="test/hummingbot/connector/derivative/dydx_v4_perpetual/" \
  	--ignore="test/hummingbot/remote_iface/" \
- 	--ignore="test/connector/utilities/oms_connector/" \
+ 	--ignore="test/hummingbot/connector/utilities/oms_connector/" \
+ 	--ignore="test/hummingbot/connector/exchange/xrpl/" \
  	--ignore="test/hummingbot/strategy/amm_arb/" \
  	--ignore="test/hummingbot/strategy/cross_exchange_market_making/" \
 
