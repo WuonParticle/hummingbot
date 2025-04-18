@@ -113,7 +113,7 @@ class PMMConfig(ControllerConfigBase):
             "prompt": "Enter the leverage to use for trading (e.g., 20 for 20x leverage). Set it to 1 for spot trading:",
         }
     )
-    position_mode: PositionMode = Field(default="HEDGE")
+    position_mode: PositionMode = Field(default=PositionMode.HEDGE)
     take_profit: Optional[Decimal] = Field(
         default=Decimal("0.02"), gt=0,
         json_schema_extra={

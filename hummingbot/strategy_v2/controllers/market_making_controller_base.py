@@ -73,7 +73,7 @@ class MarketMakingControllerConfigBase(ControllerConfigBase):
             "prompt_on_new": True}
     )
     position_mode: PositionMode = Field(
-        default="HEDGE",
+        default=PositionMode.HEDGE,
         json_schema_extra={"prompt": "Enter the position mode (HEDGE/ONEWAY): "}
     )
     # Triple Barrier Configuration
