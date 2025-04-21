@@ -134,7 +134,7 @@ class BacktestingEngineBase:
                     if executor_simulation.close_type != CloseType.FAILED:
                         self.manage_active_executors(executor_simulation)
                 elif isinstance(action, StopExecutorAction):
-                    self.handle_stop_action(action, row["timestamp"])
+                    self.handle_stop_action(action, row.name)
 
         return self.controller.executors_info
 
@@ -143,13 +143,13 @@ class BacktestingEngineBase:
         self.controller.market_data_provider.prices = {key: Decimal(row["close_bt"])}
         self.controller.market_data_provider._time = row["timestamp"]
         self.controller.processed_data.update(row.to_dict())
-        self.update_executors_info(row["timestamp"])
+        self.update_executors_info(row.name)
 
-    def update_executors_info(self, timestamp: float):
+    def update_executors_info(self, timestamp_dt: pd.Timestamp):
         active_executors_info = []
         simulations_to_remove = []
         for executor in self.active_executor_simulations:
-            executor_info = executor.get_executor_info_at_timestamp(timestamp)
+            executor_info = executor.get_executor_info_at_timestamp(timestamp_dt)
             if executor_info.status == RunnableStatus.TERMINATED:
                 self.stopped_executors_info.append(executor_info)
                 simulations_to_remove.append(executor.config.id)
@@ -179,6 +179,10 @@ class BacktestingEngineBase:
             trading_pair=self.controller.config.trading_pair,
             interval=self.backtesting_resolution
         ).add_suffix("_bt")
+
+        # Make sure we have a datetime index for performance (most of the time it's already a datetime index)
+        if not isinstance(backtesting_candles.index, pd.DatetimeIndex):
+            backtesting_candles.index = pd.to_datetime(backtesting_candles.index, unit='s')
 
         if "features" not in self.controller.processed_data:
             backtesting_candles["reference_price"] = backtesting_candles["close_bt"]
@@ -228,7 +232,7 @@ class BacktestingEngineBase:
         if not simulation.executor_simulation.empty:
             self.active_executor_simulations.append(simulation)
 
-    def handle_stop_action(self, action: StopExecutorAction, timestamp: pd.Timestamp):
+    def handle_stop_action(self, action: StopExecutorAction, timestamp_dt: pd.Timestamp):
         """
         Handles stop actions for executors, terminating them as required.
 
@@ -238,12 +242,12 @@ class BacktestingEngineBase:
             timestamp (pd.Timestamp): The current timestamp.
         """
         for executor in self.active_executor_simulations:
-            executor_info = executor.get_executor_info_at_timestamp(timestamp)
+            executor_info = executor.get_executor_info_at_timestamp(timestamp_dt)
             if executor_info.config.id == action.executor_id:
                 executor_info.status = RunnableStatus.TERMINATED
                 executor_info.close_type = CloseType.EARLY_STOP
                 executor_info.is_active = False
-                executor_info.close_timestamp = timestamp
+                executor_info.close_timestamp = pd.Timestamp.timestamp(timestamp_dt)
                 self.stopped_executors_info.append(executor_info)
                 self.active_executor_simulations.remove(executor)
 
