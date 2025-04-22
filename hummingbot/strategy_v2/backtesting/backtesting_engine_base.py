@@ -84,7 +84,12 @@ class BacktestingEngineBase:
                               controller_config: ControllerConfigBase,
                               start: int, end: int,
                               backtesting_resolution: str = "1m",
-                              trade_cost=0.0006):
+                              trade_cost=0.0006,
+                              backtest_offset: int = 0):
+        '''
+        Args:
+            backtest_offset (int): The offset to the start of the backtesting period. Relevant really only for <=1s data.
+        '''
         controller_class = self.__controller_class_cache.get_or_add(controller_config.controller_name, controller_config.get_controller_class)
         # controller_class = controller_config.get_controller_class()
         # Load historical candles
@@ -95,7 +100,7 @@ class BacktestingEngineBase:
         self.backtesting_resolution = backtesting_resolution
         await self.initialize_backtesting_data_provider()
         await self.controller.update_processed_data()
-        executors_info = await self.simulate_execution(trade_cost=trade_cost)
+        executors_info = await self.simulate_execution(trade_cost=trade_cost, backtest_offset=backtest_offset)
         results = self.summarize_results(executors_info, controller_config.total_amount_quote)
         return {
             "executors": executors_info,
@@ -113,7 +118,7 @@ class BacktestingEngineBase:
         for config in self.controller.config.candles_config:
             await self.controller.market_data_provider.initialize_candles_feed(config)
 
-    async def simulate_execution(self, trade_cost: float) -> list:
+    async def simulate_execution(self, trade_cost: float, backtest_offset: int = 0) -> list:
         """
         Simulates market making strategy over historical data, considering trading costs.
 
@@ -123,7 +128,7 @@ class BacktestingEngineBase:
         Returns:
             List[ExecutorInfo]: List of executor information objects detailing the simulation results.
         """
-        processed_features = self.prepare_market_data()
+        processed_features = self.prepare_market_data(backtest_offset=backtest_offset)
         self.active_executor_simulations: List[ExecutorSimulation] = []
         self.stopped_executors_info: List[ExecutorInfo] = []
         for i, row in processed_features.iterrows():
@@ -167,7 +172,7 @@ class BacktestingEngineBase:
         """
         raise NotImplementedError("update_processed_data method must be implemented in a subclass.")
 
-    def prepare_market_data(self) -> pd.DataFrame:
+    def prepare_market_data(self, backtest_offset: int = 0) -> pd.DataFrame:
         """
         Prepares market data by merging candle data with strategy features, filling missing values.
 
@@ -192,6 +197,8 @@ class BacktestingEngineBase:
             backtesting_candles = pd.merge_asof(backtesting_candles, self.controller.processed_data["features"],
                                                 left_on="timestamp_bt", right_on="timestamp",
                                                 direction="backward")
+        if backtest_offset > 0:
+            backtesting_candles = backtesting_candles.iloc[backtest_offset:]
         backtesting_candles["timestamp"] = backtesting_candles["timestamp_bt"]
         backtesting_candles["open"] = backtesting_candles["open_bt"]
         backtesting_candles["high"] = backtesting_candles["high_bt"]
